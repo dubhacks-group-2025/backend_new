@@ -1,19 +1,53 @@
-def convert_glb_to_usdz(glb_path: str, output_dir: str = "models") -> str:
-    """
-    Converts a .glb file to .usdz using Blender's command-line interface.
-    Requires Blender to be installed and in your PATH.
-    """
-    usdz_path = os.path.splitext(glb_path)[0] + ".usdz"
-    os.makedirs(output_dir, exist_ok=True)
+import requests
+import time
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
+
+API_KEY = os.getenv("TRIPO_API_KEY")
+base_url = "https://api.tripo3d.ai/v2/openapi/task"
+
+def convert_glb_to_usdz(original_model_task_id):
+    """
+    Convert a GLB model to USDZ format using the conversion API.
+    
+    Args:
+        original_model_task_id (str): The task_id from a previous model generation task
+        
+    Returns:
+        str: The new task_id for the conversion task
+    """
+    
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "type": "convert_model",
+        "format": "USDZ",
+        "original_model_task_id": original_model_task_id
+    }
+    
     try:
-        subprocess.run([
-            "blender",
-            "--background",
-            "--python-expr",
-            f"import bpy; bpy.ops.import_scene.gltf(filepath='{glb_path}'); bpy.ops.export_scene.usdz(filepath='{usdz_path}')"
-        ], check=True)
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"USDZ conversion failed: {str(e)}")
+        response = requests.post(base_url, json=payload, headers=headers)
+        response.raise_for_status()
+        result = response.json()
 
-    return usdz_path
+        # Print full response for debugging
+        print(f"Full API Response: {result}")
+        
+        task_id = result['data']['task_id']
+        return task_id
+        
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Error during conversion: {e}")
+        raise
+
+# Example usage
+if __name__ == "__main__":
+    id = "cd9ca7de-9c88-49cb-a7b3-b716ff1481a5"
+    
+    task_id = convert_glb_to_usdz(id)  # Already returns task_id
+    print(f"New task ID: {task_id}")
