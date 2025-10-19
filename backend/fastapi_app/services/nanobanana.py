@@ -2,6 +2,7 @@ import os
 from io import BytesIO
 from PIL import Image
 import requests
+from dotenv import load_dotenv
 
 from google import genai  # pip install google-genai
 from google.genai import types
@@ -11,29 +12,51 @@ from firebase_admin import credentials, storage, firestore
 from datetime import timedelta
 from fastapi import APIRouter, HTTPException
 
+# Load environment variables from .env file
+load_dotenv()
+
+
 api_key = os.getenv("GEMINI_API_KEY")
-client = genai.Client(api_key=api_key)
+print(f"API Key loaded: {'Yes' if api_key else 'No'}")
+print(f"API Key length: {len(api_key) if api_key else 0}")
+
+try:
+    client = genai.Client(api_key=api_key)
+    print("Google GenAI client initialized successfully")
+except Exception as e:
+    print(f"Error initializing Google GenAI client: {e}")
+    client = None
 
 # --- SDK Initialization (do this once in your application) ---
 # Make sure to replace 'path/to/your/serviceAccountKey.json' with your actual key file.
 # You can download this from your Firebase Project Settings -> Service Accounts tab.
-cred = credentials.Certificate('/Users/simon_pl19nc8/Desktop/School/Extracurriculars/Hackathons/DUBHACKS/dubhacks-2025/backend/fastapi_app/services/dubhacks2025-26629-firebase-adminsdk-fbsvc-307e4954c1.json')
+cred = credentials.Certificate('/Users/simon_pl19nc8/Desktop/School/Extracurriculars/Hackathons/DUBHACKS/final/dubhacks-2025/dubhacks2025-26629-firebase-adminsdk-fbsvc-0be8fb6deb.json')
 firebase_admin.initialize_app(cred, {
     'storageBucket': 'dubhacks2025-26629.appspot.com' # Your project's default storage bucket
 })
 
 db = firestore.client()
 
-def get_image_from_firebase_storage(image_path: str) -> Image.Image:
-    """Download image from Firebase Storage using Admin SDK."""
+#def get_image_from_firebase_storage(image_path: str) -> Image.Image:
+"""Download image from Firebase Storage using Admin SDK.
+try:
     bucket = storage.bucket()
     blob = bucket.blob(image_path)
+    
+    # Check if the blob exists
+    if not blob.exists():
+        print(f"Image '{image_path}' not found in Firebase Storage")
+        return None
     
     # Download the image content as bytes
     image_data = blob.download_as_bytes()
     
     # Convert to PIL Image
     return Image.open(BytesIO(image_data))
+except Exception as e:
+    print(f"Error downloading image from Firebase Storage: {e}")
+    return None
+"""
 
 def url_to_image(url: str) -> Image.Image:
     """Download image from URL and return PIL Image object."""
@@ -59,27 +82,68 @@ def get_item_from_firestore(collection_name: str='drawings', document_id: str='2
             return attribute_value
         else:
             print(f"Attribute '{attribute_name}' not found in document.")
+            return None
     else:
         print(f"No such document: {document_id}")
+        return None
 
 
 def generate_image(prompt: str, out_path: str) -> list[Image.Image]:
-    # Get the image directly from Firebase Storage using the file path
-    # Assuming the image is stored as 'Profile_Photo_Tennis.JPG' in your storage
-    image = get_image_from_firebase_storage('Profile_Photo_Tennis.JPG')
-    image.save("nanobanana_sample.png")
+    # Try to get the image from Firebase Storage first
+    #image = get_image_from_firebase_storage('Profile_Photo_Tennis.JPG')
+    
+    # If image not found in Firebase Storage, try to get it from Firestore URL
+    
+    
+    try:
+        image_url = get_item_from_firestore(attribute_name='OriginalImageUrl')
+        if image_url:
+            image = url_to_image(image_url)
+            print(f"Successfully loaded image from URL: {image_url}")
+        else:
+            print("No image URL found in Firestore")
+    except Exception as e:
+        print(f"Error getting image from Firestore: {e}")
+    
+    # Check if client is available
+    if client is None:
+        print("Google GenAI client not available. Please check your API key.")
+        return []
+    
+    # If still no image, create a simple placeholder or skip image generation
+    if image is None:
+        print("No image available, generating text-only response...")
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash-image",
+                contents=[prompt],
+            )
+        except Exception as e:
+            print(f"Error generating content: {e}")
+            return []
+    else:
+        # Save the loaded image
+        image.save("nanobanana_sample.png")
+        
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash-image",
+                contents=[prompt, image],
+            )
+        except Exception as e:
+            print(f"Error generating content: {e}")
+            return []
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash-image",
-        contents=[prompt, image],
-    )
-
-    for part in response.candidates[0].content.parts:
-        if part.text is not None:
-            print(part.text)
-        elif part.inline_data is not None:
-            image = Image.open(BytesIO(part.inline_data.data))
-            image.save("generated_image.png")
+    try:
+        for part in response.candidates[0].content.parts:
+            if part.text is not None:
+                print(part.text)
+            elif part.inline_data is not None:
+                generated_image = Image.open(BytesIO(part.inline_data.data))
+                generated_image.save("generated_image.png")
+    except Exception as e:
+        print(f"Error processing response: {e}")
+        return []
 
 
 
@@ -92,7 +156,7 @@ if __name__ == "__main__":
 
     
     
-    generate_image(example_prompt, out_path="nanobanana_sample.png")
+    generate_image(example_prompt, out_path="generated_image.png")
     #generate_image(example_prompt, out_path="nanobanana_sample.png")
     
     print(get_item_from_firestore(attribute_name='OriginalImageUrl'))
