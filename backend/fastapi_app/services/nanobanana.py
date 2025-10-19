@@ -11,7 +11,7 @@ from firebase_admin import credentials, storage, firestore
 from datetime import timedelta
 from fastapi import APIRouter, HTTPException
 
-api_key = 'AIzaSyA22_1EhLMyMtl7DUySbYIxj-fgMnnKai0'
+api_key = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key)
 
 # --- SDK Initialization (do this once in your application) ---
