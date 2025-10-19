@@ -1,1 +1,8 @@
 firebase_functions~=0.1.0
+firebase-admin
+google-genai
+pillow
+requests
+python-dotenv
+fastapi
+tripo3d
